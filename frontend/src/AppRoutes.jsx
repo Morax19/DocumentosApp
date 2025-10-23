@@ -4,11 +4,14 @@ import { Routes, Route, useParams } from 'react-router-dom';
 import HomeGeneral from './components/general/HomeGeneral.jsx';
 import DocumentList from './components/general/DocumentList.jsx';
 import SendDocuments from './components/general/SendDocuments.jsx';
+import CreateDocumentType from './components/general/DocumentTypeForm.jsx';
+
+import Companies from './components/admin/Companies.jsx';
 
 export default function AppRoutes(){
     return (
         <Routes>
-            {/* Paths from the App */}
+            {/* Rutas Generales */}
             <Route path="/" element={<HomeGeneral/>} />
 
             <Route 
@@ -19,6 +22,17 @@ export default function AppRoutes(){
             <Route 
                 path="/send-documents" 
                 element={<SendDocuments />} 
+            />
+
+            <Route 
+                path="/document-type" 
+                element={<CreateDocumentType />} 
+            />
+
+            {/* Rutas de Admin*/}
+            <Route 
+                path="/companies" 
+                element={<Companies />} 
             />
         </Routes>
     );
