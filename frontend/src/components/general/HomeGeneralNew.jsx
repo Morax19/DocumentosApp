@@ -1,22 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import LayoutBaseAdmin from '../base/LayoutBase';
+import '../../styles/general/homeGeneral.css';
 
-// MUI imports (v7)
+// MUI
 import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
-import TextField from '@mui/material/TextField';
-import IconButton from '@mui/material/IconButton';
 import Grid from '@mui/material/Grid';
 import Card from '@mui/material/Card';
+import CardActionArea from '@mui/material/CardActionArea';
 import CardContent from '@mui/material/CardContent';
-import Tooltip from '@mui/material/Tooltip';
+import TextField from '@mui/material/TextField';
 import InputAdornment from '@mui/material/InputAdornment';
-import Stack from '@mui/material/Stack';
+import IconButton from '@mui/material/IconButton';
+import Typography from '@mui/material/Typography';
+import Avatar from '@mui/material/Avatar';
 
+// MUI Icons
 import SearchIcon from '@mui/icons-material/Search';
-import FolderOpenOutlined from '@mui/icons-material/FolderOpenOutlined';
-import EditOutlined from '@mui/icons-material/EditOutlined';
+import FolderIcon from '@mui/icons-material/Folder';
+import EditIcon from '@mui/icons-material/Edit';
 
 // Datos simulados para las carpetas
 const mockFolders = [
@@ -38,6 +40,7 @@ const HomeAdmin = () => {
     const [filteredFolders, setFilteredFolders] = useState(mockFolders);
     const navigate = useNavigate();
 
+    // Efecto para simular el filtrado de las carpetas
     useEffect(() => {
         const results = mockFolders.filter(folder =>
             folder.name.toLowerCase().includes(searchTerm.toLowerCase())
@@ -45,97 +48,76 @@ const HomeAdmin = () => {
         setFilteredFolders(results);
     }, [searchTerm]);
 
+    // Navegación al hacer clic en carpeta
     const handleFolderClick = (folderName) => {
+        console.log(`Navegando a la carpeta: ${folderName}`);
         const encodedFolderName = encodeURIComponent(folderName);
         navigate(`/${encodedFolderName}`);
     };
 
     return (
         <LayoutBaseAdmin activePage="home">
-            <Box sx={{ p: 3 }}>
-                <Stack spacing={1} mb={3}>
-                    <Box>
-                        <Typography variant="h5" component="h2">
-                            Gestión de Documentos Gipsy
-                        </Typography>
-                        <Typography variant="subtitle1" color="text.secondary">
-                            Bienvenido(a), Usuario
-                        </Typography>
-                    </Box>
+            <Box sx={{ p: 3 }} className="home-admin-container">
+                {/* Título y Bienvenida */}
+                <Box sx={{ mb: 3 }} className="title-section-home">
+                    <Typography variant="h4" component="h2">Gestión de Documentos Gipsy</Typography>
+                    <Typography variant="subtitle1">Bienvenido(a), Usuario</Typography>
+                </Box>
 
-                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mt: 1 }}>
-                        <TextField
-                            fullWidth
-                            size="small"
-                            placeholder="Buscar ..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            InputProps={{
-                                endAdornment: (
-                                    <InputAdornment position="end">
-                                        <IconButton aria-label="buscar" edge="end" size="small">
-                                            <SearchIcon />
-                                        </IconButton>
-                                    </InputAdornment>
-                                )
-                            }}
-                            aria-label="buscar carpetas"
-                        />
-                    </Box>
-                </Stack>
+                {/* Barra de Búsqueda */}
+                <Box sx={{ mb: 3, maxWidth: 600 }} className="search-bar-container">
+                    <TextField
+                        fullWidth
+                        placeholder="Buscar ..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        variant="outlined"
+                        size="small"
+                        InputProps={{
+                            endAdornment: (
+                                <InputAdornment position="end">
+                                    <IconButton aria-label="buscar" edge="end">
+                                        <SearchIcon />
+                                    </IconButton>
+                                </InputAdornment>
+                            ),
+                        }}
+                    />
+                </Box>
 
-                <Box>
+                {/* Cuadrícula de Carpetas */}
+                <Box className="folders-grid-container">
                     {filteredFolders.length > 0 ? (
-                        <Grid container spacing={2}>
+                        <Grid container spacing={2} className="folders-grid">
                             {filteredFolders.map((folder) => (
-                                <Grid item xs={12} sm={6} md={4} lg={3} key={folder.id}>
-                                    <Card
-                                        variant="outlined"
-                                        sx={{
-                                            cursor: 'pointer',
-                                            '&:hover': { boxShadow: 3, transform: 'translateY(-2px)' },
-                                            transition: 'all 150ms ease',
-                                            height: '100%'
-                                        }}
-                                        onClick={() => handleFolderClick(folder.name)}
-                                    >
-                                        <CardContent
-                                            sx={{
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'space-between',
-                                                gap: 1
-                                            }}
-                                        >
-                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, overflow: 'hidden' }}>
-                                                <FolderOpenOutlined color="primary" sx={{ fontSize: 34 }} />
-                                                <Typography noWrap variant="body1">
-                                                    {folder.name}
-                                                </Typography>
-                                            </Box>
-
-                                            <Box>
-                                                <Tooltip title="Editar">
+                                <Grid item key={folder.id} xs={12} sm={6} md={4} lg={3}>
+                                    <Card>
+                                        <CardActionArea onClick={() => handleFolderClick(folder.name)}>
+                                            <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                                                <Avatar sx={{ bgcolor: 'primary.main' }}>
+                                                    <FolderIcon />
+                                                </Avatar>
+                                                <Box sx={{ flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                    <Typography variant="body1" className="folder-name">{folder.name}</Typography>
                                                     <IconButton
-                                                        size="small"
+                                                        aria-label={`editar-${folder.id}`}
                                                         onClick={(e) => {
                                                             e.stopPropagation();
                                                             console.log(`Acceso directo a: ${folder.name}`);
-                                                            // agregar lógica para editar o abrir enlace
+                                                            // abrir modal o navegar a edición si es necesario
                                                         }}
-                                                        aria-label={`editar ${folder.name}`}
                                                     >
-                                                        <EditOutlined fontSize="small" />
+                                                        <EditIcon />
                                                     </IconButton>
-                                                </Tooltip>
-                                            </Box>
-                                        </CardContent>
+                                                </Box>
+                                            </CardContent>
+                                        </CardActionArea>
                                     </Card>
                                 </Grid>
                             ))}
                         </Grid>
                     ) : (
-                        <Typography color="text.secondary">No se encontraron carpetas.</Typography>
+                        <Typography className="no-results-home">No se encontraron carpetas.</Typography>
                     )}
                 </Box>
             </Box>
