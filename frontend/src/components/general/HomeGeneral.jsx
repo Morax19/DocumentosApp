@@ -54,30 +54,39 @@ const HomeAdmin = () => {
         <LayoutBaseAdmin activePage="home">
             <Box sx={{ p: 3 }}>
                 <Stack spacing={1} mb={3}>
-                    <Box>
-                        <Typography variant="h5" component="h2">
+                    <Box sx={{ display: 'flex', alignItems: 'center', flexDirection: 'column' }}>
+                        <Typography 
+                            variant="h5"
+                            component="h2"
+                            sx={{ color: "#421d83", fontWeight: 'bold' }}
+                        >
                             Gestión de Documentos Gipsy
                         </Typography>
-                        <Typography variant="subtitle1" color="text.secondary">
+                        <Typography
+                            variant="subtitle1"
+                            color="text.secondary"
+                        >
                             Bienvenido(a), Usuario
                         </Typography>
                     </Box>
 
                     <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mt: 1 }}>
                         <TextField
+                            id="search-home-page"
+                            label="Buscar Documento"
+                            variant="outlined"
+                            margin="dense"
                             fullWidth
-                            size="small"
-                            placeholder="Buscar ..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            InputProps={{
-                                endAdornment: (
-                                    <InputAdornment position="end">
-                                        <IconButton aria-label="buscar" edge="end" size="small">
+                            slotProps={{
+                                input: {
+                                    endAdornment: (
+                                        <InputAdornment position="end">
                                             <SearchIcon />
-                                        </IconButton>
-                                    </InputAdornment>
-                                )
+                                        </InputAdornment>
+                                    )
+                                }
                             }}
                             aria-label="buscar carpetas"
                         />
