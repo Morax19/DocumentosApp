@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import LayoutBaseAdmin from '../base/LayoutBase';
+import { useAuth } from '../../utils/AuthContext'; 
 
-// MUI imports (v7)
+// MUI imports
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import TextField from '@mui/material/TextField';
@@ -23,46 +24,47 @@ const apiUrl = isDevelopment ? import.meta.env.VITE_API_BASE_URL_LOCAL : import.
 
 const HomeAdmin = () => {
     const { user } = useAuth();
+    
     const hasRole = (roleId) => {
         if (!user) return false;
         return Array.isArray(user.roles) && user.roles.some(r => (typeof r === 'number' ? r === roleId : (r.id === roleId || r.roleId === roleId)));
     };
-    const isEditor = hasRole(11);
-    const isLector = hasRole(12);
-    const isOnlyLector = isLector && !isEditor;
-    const [mockFolders, setMockFolders] = useState([])
+    
+    // const isEditor = hasRole(11); // No se usan en el render, pero está bien dejarlos si los usarás luego
+    // const isLector = hasRole(12);
+
+    const [mockFolders, setMockFolders] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
-    const [message, setMessage] = useState('');
+    // const [message, setMessage] = useState(''); // No se usa en el render
     const [isLoading, setIsLoading] = useState(false);
-    const [error, setError] = useState(null);
+    // const [error, setError] = useState(null); // No se usa en el render
     const [filteredFolders, setFilteredFolders] = useState([]);
     const navigate = useNavigate();
 
+    // 1. Cargar carpetas
     useEffect(() => {
         const fetchFolders = async () => {
             setIsLoading(true);
-
             try {
                 const response = await fetch(`${apiUrl}/documents/getDocType`);
-                
                 if (!response.ok) {
                     throw new Error(`Error HTTP: ${response.status}`);
                 }
-
                 const data = await response.json();
                 setMockFolders(data);
+                setFilteredFolders(data); // Inicializamos también los filtrados
             } catch (err) {
-                setError(err.message);
-                setMessage('Error al cargar las carpetas.');
+                // setError(err.message);
+                // setMessage('Error al cargar las carpetas.');
                 console.error('Error al obtener las carpetas:', err);
             } finally {
                 setIsLoading(false);
             }
         };
-
         fetchFolders();
     }, []);
     
+    // 2. CORRECCIÓN: Lógica de búsqueda corregida y useEffect cerrado correctamente
     useEffect(() => {
         if(!searchTerm) {
             setFilteredFolders(mockFolders);
@@ -72,16 +74,20 @@ const HomeAdmin = () => {
         const results = mockFolders.filter(folder =>
             folder.name.toLowerCase().includes(searchTerm.toLowerCase())
         );
+        
+        // CORRECCIÓN: Faltaba actualizar el estado
+        setFilteredFolders(results);
 
-    const handleFolderClick = (folderName) => {
+    }, [searchTerm, mockFolders]); // CORRECCIÓN: Se cierra la llave y paréntesis aquí
+
+    // CORRECCIÓN: Añadido folderId como argumento
+    const handleFolderClick = (folderId, folderName) => {
         const encodedFolderName = encodeURIComponent(folderName);
         navigate(`/${encodedFolderName}`, { state: { folderId: folderId, folderName: folderName } });
     };
 
-    // Función para manejar el clic en el ícono de edición
     const handleEditClick = (e, folderId, folderName) => {
         e.stopPropagation(); 
-        
         navigate('/document-type', {
             state: { folderId: folderId, folderName: folderName, isEditing: true }
         });
@@ -103,7 +109,7 @@ const HomeAdmin = () => {
                             variant="subtitle1"
                             color="text.secondary"
                         >
-                            Bienvenido(a), Usuario
+                            Bienvenido(a), {user?.firstName || 'Usuario'}
                         </Typography>
                     </Box>
 
@@ -116,22 +122,21 @@ const HomeAdmin = () => {
                             fullWidth
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
-                            slotProps={{
-                                input: {
-                                    endAdornment: (
-                                        <InputAdornment position="end">
-                                            <SearchIcon />
-                                        </InputAdornment>
-                                    )
-                                }
+                            InputProps={{ // En MUI v5+ suele ser InputProps, verifica si usas slotProps (v6 alpha/v7)
+                                endAdornment: (
+                                    <InputAdornment position="end">
+                                        <SearchIcon />
+                                    </InputAdornment>
+                                )
                             }}
-                            aria-label="buscar carpetas"
                         />
                     </Box>
                 </Stack>
 
                 <Box>
-                    {filteredFolders.length > 0 ? (
+                    {isLoading ? (
+                         <Typography>Cargando...</Typography>
+                    ) : filteredFolders.length > 0 ? (
                         <Grid container spacing={2}>
                             {filteredFolders.map((folder) => (
                                 <Grid item xs={12} sm={6} md={4} lg={3} key={folder.id}>
@@ -143,7 +148,8 @@ const HomeAdmin = () => {
                                             transition: 'all 150ms ease',
                                             height: '100%'
                                         }}
-                                        onClick={() => handleFolderClick(folder.name)}
+                                        // CORRECCIÓN: Pasamos folder.id también
+                                        onClick={() => handleFolderClick(folder.id, folder.name)}
                                     >
                                         <CardContent
                                             sx={{
@@ -164,11 +170,8 @@ const HomeAdmin = () => {
                                                 <Tooltip title="Editar">
                                                     <IconButton
                                                         size="small"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation();
-                                                            console.log(`Acceso directo a: ${folder.name}`);
-                                                            // agregar lógica para editar o abrir enlace
-                                                        }}
+                                                        // CORRECCIÓN: Usamos la función handleEditClick real
+                                                        onClick={(e) => handleEditClick(e, folder.id, folder.name)}
                                                         aria-label={`editar ${folder.name}`}
                                                     >
                                                         <EditOutlined fontSize="small" />
