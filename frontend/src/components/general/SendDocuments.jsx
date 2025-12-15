@@ -3,76 +3,197 @@ import LayoutBase from '../base/LayoutBase';
 import '../../styles/general/sendDocuments.css'; 
 import SendDocumentModal from './SendDocumentModal';
 
-// Datos simulados para la tabla (similares a los del diseño)
-const mockDocuments = [
-    { id: 1, name: 'Contrato A-2024', type: 'Arrendamiento', company: 'Gipsy S.A.', date: '01/03/2024' },
-    { id: 2, name: 'RIF GIPSY 2024', type: 'RIF', company: 'Gipsy S.A.', date: '15/03/2023' },
-    { id: 3, name: 'Poder Legal', type: 'Poderes', company: 'Empresa Beta', date: '20/04/2024' },
-    { id: 4, name: 'Licencia Sanitaria', type: 'Permiso Sanitario', company: 'Empresa Delta', date: '10/05/2023' },
-    { id: 5, name: 'Estatuto Registral', type: 'Registros Mercantiles', company: 'Empresa Beta', date: '25/05/2024' },
-    { id: 6, name: 'Patente Municipal', type: 'Patente', company: 'Gipsy S.A.', date: '05/01/2024' },
-    { id: 7, name: 'Recibo CORPOELEC', type: 'Corpoelec', company: 'Empresa Alpha', date: '10/06/2024' },
-    { id: 8, name: 'Póliza Vehículo', type: 'Pólizas Seguro', company: 'Empresa Delta', date: '25/06/2024' },
-    { id: 9, name: 'Registro Sanitario', type: 'Registro Sanitario', company: 'Gipsy S.A.', date: '01/07/2024' },
-    { id: 10, name: 'Acta de Asamblea', type: 'Registros Mercantiles', company: 'Empresa Alpha', date: '15/07/2024' },
-    // Página 2
-    { id: 11, name: 'Factura 11', type: 'Factura', company: 'Gipsy S.A.', date: '01/08/2024' },
-    { id: 12, name: 'Factura 12', type: 'Factura', company: 'Empresa Beta', date: '15/08/2024' },
-];
+// Configuración de API
+const isDevelopment = import.meta.env.MODE === 'development';
+const apiUrl = isDevelopment ? import.meta.env.VITE_API_BASE_URL_LOCAL : import.meta.env.VITE_API_BASE_URL_PROD;
 
-const ITEMS_PER_PAGE = 10; // Límite de documentos por página
+const ITEMS_PER_PAGE = 20;
 
-const SendDocuments = () => {
-    const [allDocuments] = useState(mockDocuments);
+const SendDocuments = ({ folderId, folderName }) => { // Recibe props opcionales
+    const [allDocuments, setAllDocuments] = useState([]);
+    const [dateHeaderLabel, setDateHeaderLabel] = useState('FECHA');
+    const [isLoading, setIsLoading] = useState(false);
+    
+    // Estados para filtros
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedDocuments, setSelectedDocuments] = useState([]);
     const [currentPage, setCurrentPage] = useState(1);
     
-    const [filteredDocuments, setFilteredDocuments] = useState(allDocuments);
+    const [filteredDocuments, setFilteredDocuments] = useState([]);
     const [primaryFilter, setPrimaryFilter] = useState('');
     const [secondaryFilter, setSecondaryFilter] = useState('');
     const [secondaryFilterOptions, setSecondaryFilterOptions] = useState([]);
 
     const [isSendModalOpen, setIsSendModalOpen] = useState(false);
+
+    const [sortConfig, setSortConfig] = useState({ key: null, direction: 'none' });
     
-    // Lógica de Filtrado y Opciones Dinámicas
+    // --- 1. CARGA DE DATOS (FETCH) ---
+    useEffect(() => {
+        const fetchAllDocuments = async () => {
+            setIsLoading(true);
+            try {
+                // LÓGICA DE ENDPOINT:
+                // Si recibimos un folderId (props), filtramos por esa carpeta.
+                // Si no (vista general), pedimos TODOS los documentos.
+                let url = `${apiUrl}/documents/getAllDocumentsList`; 
+                
+                if (folderId) {
+                    const params = new URLSearchParams({ id: folderId });
+                    url = `${apiUrl}/documents/getDocumentsList?${params.toString()}`;
+                }
+
+                const response = await fetch(url);
+                
+                if (!response.ok) throw new Error('Error al cargar documentos');
+
+                const data = await response.json();
+
+                // Mapeo seguro de datos (Backend -> Frontend)
+                // Extraer posible fecha de vencimiento llamando a getDocument por cada documento
+                const extractExpiration = (docData) => {
+                    if (!docData) return null;
+                    const fields = docData.fieldsData || docData.fields || null;
+
+                    const normalize = (s) => (s || '').toString().trim().toLowerCase();
+
+                    const checkAndReturn = (name, value) => {
+                        if (!value && value !== 0) return null;
+                        const v = value;
+                        if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v.trim())) {
+                            return v.trim();
+                        }
+                        const date = new Date(v);
+                        if (!isNaN(date.getTime())) {
+                            const y = date.getFullYear();
+                            const m = String(date.getMonth() + 1).padStart(2, '0');
+                            const d = String(date.getDate()).padStart(2, '0');
+                            return `${y}-${m}-${d}`;
+                        }
+                        return null;
+                    };
+
+                    if (fields && typeof fields === 'object' && !Array.isArray(fields)) {
+                        for (const [k, v] of Object.entries(fields)) {
+                            const key = normalize(k);
+                            if (key.includes('vencim') || key.includes('fecha de venc')) {
+                                if (typeof v === 'object' && v !== null) {
+                                    const candidate = v.Value || v.value || v.valor || v.text || v.textValue || null;
+                                    const res = checkAndReturn(k, candidate ?? v);
+                                    if (res) return res;
+                                } else {
+                                    const res = checkAndReturn(k, v);
+                                    if (res) return res;
+                                }
+                            }
+                        }
+                    }
+
+                    if (Array.isArray(fields)) {
+                        for (const f of fields) {
+                            const name = normalize(f.name || f.fieldName || f.label || f.FieldName);
+                            if (name && (name.includes('vencim') || name.includes('fecha de venc'))) {
+                                const candidate = f.value ?? f.Value ?? f.default ?? f.text ?? null;
+                                const res = checkAndReturn(f.name || f.fieldName, candidate ?? f);
+                                if (res) return res;
+                            }
+                        }
+                    }
+
+                    return null;
+                };
+
+                const detailsPromises = data.map(async (doc) => {
+                    try {
+                        const id = doc.DocumentID || doc.id;
+                        const docRes = await fetch(`${apiUrl}/documents/getDocument?id=${id}`);
+                        if (!docRes.ok) return { raw: doc, expiration: null };
+                        const docData = await docRes.json();
+                        const expiration = extractExpiration(docData);
+                        return { raw: doc, expiration };
+                    } catch (err) {
+                        return { raw: doc, expiration: null };
+                    }
+                });
+
+                const details = await Promise.all(detailsPromises);
+
+                const formattedDocs = details.map(d => ({
+                    id: d.raw.DocumentID || d.raw.id,
+                    name: `Documento #${d.raw.DocumentID || d.raw.id}`,
+                    type: d.raw.TypeName || d.raw.docTypeName || 'Sin Tipo',
+                    company: d.raw.CompanyName || d.raw.companyName || 'Sin Empresa',
+                    date: d.expiration || null
+                }));
+
+                const anyHasExpiration = formattedDocs.some(fd => !!fd.date);
+                setDateHeaderLabel(anyHasExpiration ? 'VENCIMIENTO' : 'FECHA');
+
+                setAllDocuments(formattedDocs);
+                setFilteredDocuments(formattedDocs);
+
+            } catch (error) {
+                console.error("Error cargando documentos:", error);
+                // Opcional: Mostrar alerta al usuario
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        fetchAllDocuments();
+    }, [folderId]); // Dependencia: si cambia la carpeta, recargamos
+
+    // --- 2. LÓGICA DE FILTRADO ---
     useEffect(() => {
         let currentDocuments = [...allDocuments];
-    
-        // 1. Barra de búsqueda
+
+        // A. Búsqueda por texto
         if (searchTerm) {
             currentDocuments = currentDocuments.filter(doc =>
-                doc.name.toLowerCase().includes(searchTerm.toLowerCase())
+                doc.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                doc.company.toLowerCase().includes(searchTerm.toLowerCase())
             );
         }
-    
-        // 2. Opciones del filtro secundario
+
+        const getYear = (dateStr) => {
+            if (!dateStr) return null;
+            if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return Number(dateStr.split('-')[0]);
+            const dt = new Date(dateStr);
+            return isNaN(dt.getTime()) ? null : dt.getFullYear();
+        };
+
+        // B. Opciones del filtro secundario
         let newSecondaryOptions = [];
         if (primaryFilter === 'year') {
-            const years = [...new Set(currentDocuments.map(d => new Date(d.date).getFullYear()))].sort((a, b) => b - a);
+            const years = [...new Set(currentDocuments
+                .filter(d => d.date)
+                .map(d => getYear(d.date))
+                .filter(y => y !== null)
+            )].sort((a, b) => b - a);
             newSecondaryOptions = years.map(year => ({ value: String(year), label: String(year) }));
+
         } else if (primaryFilter === 'company') {
             const companies = [...new Set(currentDocuments.map(d => d.company))].sort();
             newSecondaryOptions = companies.map(company => ({ value: company, label: company }));
-        } else if (primaryFilter === 'type') { // 💡 AJUSTE 3: Lógica para Tipo de Documento
+
+        } else if (primaryFilter === 'type') {
             const types = [...new Set(currentDocuments.map(d => d.type))].sort();
             newSecondaryOptions = types.map(type => ({ value: type, label: type }));
         }
         setSecondaryFilterOptions(newSecondaryOptions);
-    
-        // 3. Limpieza de filtro secundario
-        if (primaryFilter !== '' && secondaryFilter !== '' && !newSecondaryOptions.some(opt => opt.value === secondaryFilter)) {
-            setSecondaryFilter('');
-        } else if (primaryFilter === '' && secondaryFilter !== '') {
+
+        // C. Limpieza de filtro secundario
+        if (primaryFilter && secondaryFilter && !newSecondaryOptions.some(opt => opt.value === secondaryFilter)) {
             setSecondaryFilter('');
         }
-    
-        // 4. Filtro secundario
-        if (primaryFilter && secondaryFilter !== '') {
+
+        // D. Aplicación de filtros
+        if (primaryFilter && secondaryFilter) {
             if (primaryFilter === 'year') {
-                currentDocuments = currentDocuments.filter(doc =>
-                    String(new Date(doc.date).getFullYear()) === secondaryFilter
-                );
+                currentDocuments = currentDocuments.filter(doc => {
+                    const y = getYear(doc.date);
+                    return y !== null && String(y) === secondaryFilter;
+                });
             } else if (primaryFilter === 'company') {
                 currentDocuments = currentDocuments.filter(doc =>
                     doc.company === secondaryFilter
@@ -83,12 +204,41 @@ const SendDocuments = () => {
                 );
             }
         }
+
+        // --- E. APLICACIÓN DEL ORDENAMIENTO ---
+        if (sortConfig.key === 'date' && sortConfig.direction !== 'none') {
+            const parse = (s) => {
+                if (!s) return null;
+                if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+                    const [y, m, d] = s.split('-').map(Number);
+                    return new Date(y, m - 1, d).getTime();
+                }
+                const dt = new Date(s);
+                return isNaN(dt.getTime()) ? null : dt.getTime();
+            };
+
+            currentDocuments.sort((a, b) => {
+                const dateA = parse(a.date);
+                const dateB = parse(b.date);
+
+                const isANull = dateA === null;
+                const isBNull = dateB === null;
+
+                if (isANull && isBNull) return 0;
+                if (isANull) return sortConfig.direction === 'asc' ? 1 : -1;
+                if (isBNull) return sortConfig.direction === 'asc' ? -1 : 1;
+
+                if (dateA < dateB) return sortConfig.direction === 'asc' ? -1 : 1;
+                if (dateA > dateB) return sortConfig.direction === 'asc' ? 1 : -1;
+                return 0;
+            });
+        }
         
-        // 5. Actualizar filtros
         setFilteredDocuments(currentDocuments);
-    }, [searchTerm, primaryFilter, secondaryFilter, allDocuments]);
+    }, [searchTerm, primaryFilter, secondaryFilter, allDocuments, sortConfig]);
     
 
+    // --- Paginación ---
     const totalPages = Math.ceil(filteredDocuments.length / ITEMS_PER_PAGE);
 
     const paginatedDocuments = useMemo(() => {
@@ -98,14 +248,36 @@ const SendDocuments = () => {
     }, [filteredDocuments, currentPage]);
 
     useEffect(() => {
-        // Reiniciar a la primera página cuando cambian los filtros/búsqueda
         setCurrentPage(1);
     }, [searchTerm, filteredDocuments.length]);
 
-    // --- Lógica de Selección de Checkbox ---
 
+    // --- 3. MANEJADOR DE CLIC DEL ENCABEZADO ---
+    const handleSort = (key) => {
+        let direction = 'asc';
+        if (sortConfig.key === key) {
+            if (sortConfig.direction === 'asc') {
+                direction = 'desc';
+            } else if (sortConfig.direction === 'desc') {
+                direction = 'none'; // Volver al estado inicial (sin ordenar)
+                key = null;
+            } else {
+                direction = 'asc';
+            }
+        }
+        setSortConfig({ key, direction });
+    };
+    const getSortIndicator = (key) => {
+        if (sortConfig.key !== key) return null;
+        if (sortConfig.direction === 'asc') return ' ▲';
+        if (sortConfig.direction === 'desc') return ' ▼';
+        return null;
+    };
+
+
+    // --- Lógica de Selección ---
     const isAllSelected = paginatedDocuments.length > 0 && 
-                         paginatedDocuments.every(doc => selectedDocuments.includes(doc.id));
+                          paginatedDocuments.every(doc => selectedDocuments.includes(doc.id));
 
     const handleSelectAll = (e) => {
         const isChecked = e.target.checked;
@@ -115,9 +287,7 @@ const SendDocuments = () => {
             setSelectedDocuments(Array.from(newSelected));
         } else {
             const paginatedIds = paginatedDocuments.map(doc => doc.id);
-            const newSelected = selectedDocuments.filter(id => 
-                !paginatedIds.includes(id)
-            );
+            const newSelected = selectedDocuments.filter(id => !paginatedIds.includes(id));
             setSelectedDocuments(newSelected);
         }
     };
@@ -135,29 +305,61 @@ const SendDocuments = () => {
             alert('Por favor, selecciona al menos un documento para enviar.');
             return;
         }
-        
         setIsSendModalOpen(true);
     };
 
-    const handleCloseSendModal = () => {
-        setIsSendModalOpen(false);
+    // --- 3. LÓGICA DE ENVÍO AL BACKEND (IMPLEMENTADA) ---
+    const onConfirmSend = async (ids, emailData) => { 
+        // Nota: emailData viene del modal con { senderName, recipientName, recipients, subject, body }
+        
+        console.log(`Enviando ${ids.length} documentos...`, emailData);
+        setIsLoading(true);
+        
+        try {
+            const payload = {
+                documentIds: ids,
+                emailData: emailData
+            };
+
+            const response = await fetch(`${apiUrl}/documents/sendDocuments`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) throw new Error(result.error || 'Error en el envío');
+
+            alert('¡Documentos enviados exitosamente por correo!');
+            
+            // Limpieza
+            setSelectedDocuments([]); 
+            setIsSendModalOpen(false);
+
+        } catch (error) {
+            console.error("Error al enviar:", error);
+            alert(`Hubo un problema al enviar: ${error.message}`);
+        } finally {
+            setIsLoading(false);
+        }
     };
-
-    const onConfirmSend = (ids, companyId, message) => {
-        // Lógica de API para enviar los documentos
-        console.log(`Confirmando envío de ${ids.length} documentos a Empresa ID ${companyId} con mensaje: "${message}"`);
-        alert(`Envío a empresa ID ${companyId} iniciado. Documentos: ${ids.join(', ')}`);
-
-        // Deseleccionar los documentos después de enviar
-        setSelectedDocuments([]); 
-    };
-
-    // --- Lógica de Paginación ---
 
     const goToPage = (page) => {
-        if (page >= 1 && page <= totalPages) {
-            setCurrentPage(page);
+        if (page >= 1 && page <= totalPages) setCurrentPage(page);
+    };
+
+    const formatDate = (dateString) => {
+        if (!dateString) return '-';
+        const dateOnlyMatch = /^\d{4}-\d{2}-\d{2}$/.test(dateString);
+        let date;
+        if (dateOnlyMatch) {
+            const [y, m, d] = dateString.split('-').map(Number);
+            date = new Date(y, m - 1, d);
+        } else {
+            date = new Date(dateString);
         }
+        return isNaN(date.getTime()) ? '-' : date.toLocaleDateString('es-ES');
     };
 
     return (
@@ -166,9 +368,10 @@ const SendDocuments = () => {
                 <h2 className="folder-title-sendDocuments">Envío de Documentos</h2>
                 <br></br>
                 
-                {/* Barra de Búsqueda y Filtro */}
+                {isLoading && <p style={{textAlign:'center'}}>Procesando...</p>}
+
+                {/* Filtros */}
                 <div className="search-and-controls">
-                    {/* Usamos la clase send-documents-layout que será modificada para centrar */}
                     <div className="search-filter-group users-table-style send-documents-layout">
                         <input
                             type="text"
@@ -178,7 +381,6 @@ const SendDocuments = () => {
                             onChange={(e) => setSearchTerm(e.target.value)}
                         />
 
-                        {/* Filtro primario */}
                         <select
                             className="filter-select-admin"
                             value={primaryFilter}
@@ -190,22 +392,16 @@ const SendDocuments = () => {
                             <option value="">Filtrar por...</option>
                             <option value="year">Año</option>
                             <option value="company">Empresa</option>
-                            <option value="type">Tipo de Documento</option> {/* 💡 AJUSTE 3: Nueva opción */}
+                            <option value="type">Tipo de Documento</option>
                         </select>
 
-                        {/* Filtro secundario dinámico */}
                         {primaryFilter && secondaryFilterOptions.length > 0 && (
                             <select
                                 className="filter-select-admin"
                                 value={secondaryFilter}
                                 onChange={(e) => setSecondaryFilter(e.target.value)}
-                                disabled={secondaryFilterOptions.length === 0}
                             >
-                                <option value="">
-                                    {primaryFilter === 'year' && 'Seleccione un año'}
-                                    {primaryFilter === 'company' && 'Seleccione una empresa'}
-                                    {primaryFilter === 'type' && 'Seleccione un tipo'}
-                                </option>
+                                <option value="">Seleccione...</option>
                                 {secondaryFilterOptions.map(option => (
                                     <option key={option.value} value={option.value}>
                                         {option.label}
@@ -216,12 +412,13 @@ const SendDocuments = () => {
                     </div>
                 </div>
                 
-                {/* Botón de Acción Principal y Tabla */}
+                {/* Botón de Acción y Tabla */}
                 <div className="send-action-and-table-container">
                     <button 
                         className="send-selection-button" 
                         onClick={handleSendSelection}
-                        disabled={selectedDocuments.length === 0}
+                        disabled={selectedDocuments.length === 0 || isLoading}
+                        style={{opacity: selectedDocuments.length === 0 ? 0.6 : 1}}
                     >
                         Enviar selección ({selectedDocuments.length})
                     </button>
@@ -231,7 +428,6 @@ const SendDocuments = () => {
                             <table className="documents-table">
                                 <thead>
                                     <tr>
-                                        {/* Checkbox de selección masiva */}
                                         <th className="checkbox-column">
                                             <input 
                                                 type="checkbox" 
@@ -239,16 +435,23 @@ const SendDocuments = () => {
                                                 onChange={handleSelectAll}
                                             />
                                         </th>
-                                        <th>NOMBRE</th>
-                                        <th>TIPO</th>
-                                        <th>EMPRESA</th>
-                                        <th>FECHA</th>
+                                        <th>ID</th>
+                                        <th>NOMBRE - EMPRESA</th>
+                                        <th>
+                                            {/* --- 4. APLICAR EL MANEJADOR DE CLIC --- */}
+                                            <span 
+                                                onClick={() => handleSort('date')} 
+                                                style={{cursor: 'pointer', userSelect: 'none'}} // Estilos para indicar que es clickeable
+                                            >
+                                                {dateHeaderLabel}
+                                                {getSortIndicator('date')} {/* Mostrar flecha */}
+                                            </span>
+                                        </th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {paginatedDocuments.map(doc => (
                                         <tr key={doc.id} className={selectedDocuments.includes(doc.id) ? 'selected-row' : ''}>
-                                            {/* Checkbox individual */}
                                             <td className="checkbox-column">
                                                 <input 
                                                     type="checkbox" 
@@ -256,16 +459,17 @@ const SendDocuments = () => {
                                                     onChange={() => handleSelectDocument(doc.id)}
                                                 />
                                             </td>
-                                            <td>{doc.name}</td>
-                                            <td>{doc.type}</td>
-                                            <td>{doc.company}</td>
-                                            <td>{doc.date}</td>
+                                            <td>{doc.id}</td>
+                                            <td>{doc.type} - {doc.company}</td>
+                                            <td>{formatDate(doc.date)}</td>
                                         </tr>
                                     ))}
                                 </tbody>
                             </table>
                         ) : (
-                            <p className="no-documents">No se encontraron documentos.</p>
+                            <p className="no-documents">
+                                {isLoading ? "Cargando..." : "No se encontraron documentos."}
+                            </p>
                         )}
                     </div>
                 </div>
@@ -273,44 +477,24 @@ const SendDocuments = () => {
                 {/* Paginación */}
                 {filteredDocuments.length > ITEMS_PER_PAGE && (
                     <div className="pagination-controls">
-                        <button 
-                            onClick={() => goToPage(currentPage - 1)} 
-                            disabled={currentPage === 1}
-                            className="pagination-button"
-                        >
-                            Anterior
-                        </button>
-                        <div className="page-numbers">
-                            {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                                <button
-                                    key={page}
-                                    onClick={() => goToPage(page)}
-                                    className={`page-number-button ${currentPage === page ? 'active' : ''}`}
-                                >
-                                    {page}
-                                </button>
-                            ))}
-                        </div>
-                        <button 
-                            onClick={() => goToPage(currentPage + 1)} 
-                            disabled={currentPage === totalPages}
-                            className="pagination-button"
-                        >
-                            Siguiente
-                        </button>
+                         <button onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1} className="pagination-button">Anterior</button>
+                         <span>Página {currentPage} de {totalPages}</span>
+                         <button onClick={() => goToPage(currentPage + 1)} disabled={currentPage === totalPages} className="pagination-button">Siguiente</button>
                     </div>
                 )}
             </div>
 
-            {/* Compute selected document names from ids and pass them to the modal */}
+            {/* MODAL DE ENVÍO */}
             <SendDocumentModal
                 isOpen={isSendModalOpen}
-                onClose={handleCloseSendModal}
+                onClose={() => setIsSendModalOpen(false)}
                 selectedDocuments={selectedDocuments}
                 selectedDocumentNames={allDocuments
                     .filter(d => selectedDocuments.includes(d.id))
-                    .map(d => d.name)}
+                    // CAMBIO A: d.type - d.company
+                    .map(d => `${d.type} - ${d.company}`)} 
                 onSend={onConfirmSend}
+                isLoading={isLoading}
             />
         </LayoutBase>
     );

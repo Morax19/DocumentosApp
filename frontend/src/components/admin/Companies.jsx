@@ -4,43 +4,70 @@ import '../../styles/general/sendDocuments.css';
 import editIcon from '../../assets/img/edit.png';
 import CompaniesModal from './CompaniesModal';
 
-// Datos simulados de empresas
-const mockCompanies = [
-    { id: 1, name: 'Gipsy S.A.', rif: 'J-123456789' },
-    { id: 2, name: 'Empresa Beta', rif: 'J-987654321' },
-    { id: 3, name: 'Empresa Delta', rif: 'J-112233445' },
-    { id: 4, name: 'Empresa Alpha', rif: 'J-556677880' },
-    { id: 5, name: 'Comercial XYZ', rif: 'J-223344556' },
-    { id: 6, name: 'Servicios ABC', rif: 'J-334455667' },
-    { id: 7, name: 'Industrias LMN', rif: 'J-445566778' },
-    { id: 8, name: 'Distribuciones QRS', rif: 'J-556677889' },
-    { id: 9, name: 'Logística TUV', rif: 'J-667788990' },
-    { id: 10, name: 'Soluciones 123', rif: 'J-778899001' },
-    { id: 11, name: 'Compañía Nuevo', rif: 'J-889900112' },
-];
+const isDevelopment = import.meta.env.MODE === 'development';
+const apiUrl = isDevelopment ? import.meta.env.VITE_API_BASE_URL_LOCAL : import.meta.env.VITE_API_BASE_URL_PROD;
 
 const ITEMS_PER_PAGE = 100;
 
 const Companies = () => {
-    const [allCompanies, setAllCompanies] = useState(mockCompanies);
+    const [allCompanies, setAllCompanies] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
-    const [filteredCompanies, setFilteredCompanies] = useState(allCompanies);
+    const [filteredCompanies, setFilteredCompanies] = useState([]);
+    const [isLoading, setIsLoading] = useState(false);
+    
+    // Estados del Modal
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [modalMode, setModalMode] = useState('add'); // 'add' | 'edit'
     const [companyToEdit, setCompanyToEdit] = useState(null);
 
+    // --- 1. FUNCIÓN REUTILIZABLE PARA CARGAR DATOS ---
+    const loadCompanies = async () => {
+        setIsLoading(true);
+        try {
+            const response = await fetch(`${apiUrl}/documents/getDocCompanies`);
+
+            if (!response.ok) {
+                throw new Error(`Error HTTP: ${response.status}`);
+            }
+
+            const data = await response.json();
+            console.log("Empresas cargadas:", data);
+            
+            setAllCompanies(data);
+            
+            // Si no hay búsqueda activa, actualizamos la vista inmediatamente
+            // (Si hay búsqueda, el useEffect de abajo se encargará de filtrar la nueva lista)
+            if (!searchTerm) {
+                setFilteredCompanies(data);
+            }
+            
+        } catch (err) {
+            console.error('Error al obtener las empresas:', err);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    // --- 2. EFECTO DE CARGA INICIAL ---
+    useEffect(() => {
+        loadCompanies();
+    }, []);
+
+    // --- 3. LÓGICA DE FILTRADO ---
     useEffect(() => {
         let results = [...allCompanies];
         if (searchTerm && searchTerm.trim() !== '') {
             const q = searchTerm.toLowerCase();
             results = results.filter(c =>
-                c.name.toLowerCase().includes(q) || c.rif.toLowerCase().includes(q)
+                c.name.toLowerCase().includes(q) || 
+                (c.rifNumber && c.rifNumber.toString().includes(q))
             );
         }
         setFilteredCompanies(results);
     }, [searchTerm, allCompanies]);
 
+    // --- 4. PAGINACIÓN ---
     const totalPages = Math.ceil(filteredCompanies.length / ITEMS_PER_PAGE) || 1;
 
     const paginated = useMemo(() => {
@@ -56,6 +83,8 @@ const Companies = () => {
         if (page >= 1 && page <= totalPages) setCurrentPage(page);
     };
 
+    // --- 5. MANEJADORES DE ACCIÓN ---
+
     const handleAddCompany = () => {
         setModalMode('add');
         setCompanyToEdit(null);
@@ -70,18 +99,17 @@ const Companies = () => {
         setIsModalOpen(true);
     };
 
-    const handleSaveCompany = (companyObj, mode) => {
-        if (mode === 'add') {
-            setAllCompanies(prev => [companyObj, ...prev]);
-        } else if (mode === 'edit') {
-            setAllCompanies(prev => prev.map(c => c.id === companyObj.id ? companyObj : c));
-        }
-        // actualizar también filteredCompanies inmediatamente
-        setFilteredCompanies(prev => {
-            const exists = prev.some(c => c.id === companyObj.id);
-            if (mode === 'add') return [companyObj, ...prev];
-            return prev.map(c => c.id === companyObj.id ? companyObj : c);
-        });
+    // --- 6. MANEJADOR DE GUARDADO (POST-MODAL) ---
+    const handleSaveCompany = async () => {
+        // Cerramos el modal
+        setIsModalOpen(false);
+        setCompanyToEdit(null);
+        
+        // Recargamos los datos del servidor para ver los cambios
+        await loadCompanies();
+        
+        // Opcional: Mostrar alerta de éxito
+        // alert("Lista de empresas actualizada.");
     };
 
     return (
@@ -111,7 +139,9 @@ const Companies = () => {
 
                 <div className="send-action-and-table-container">
                     <div className="documents-table-wrapper">
-                        {paginated.length > 0 ? (
+                        {isLoading && paginated.length === 0 ? (
+                            <p style={{textAlign:'center', padding:'20px'}}>Cargando empresas...</p>
+                        ) : paginated.length > 0 ? (
                             <table className="documents-table">
                                 <thead>
                                     <tr>
@@ -121,21 +151,26 @@ const Companies = () => {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                            {paginated.map(company => (
-                                                <tr key={company.id}>
-                                                    <td>{company.name}</td>
-                                                    <td>{company.rif}</td>
-                                                    <td className="actions-cell">
-                                                        <button 
-                                                            className="view-button" 
-                                                            onClick={() => handleEditCompany(company.id)}
-                                                            title="Editar Empresa"
-                                                        >
-                                                            <img src={editIcon} alt="Editar" />
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            ))}
+                                    {paginated.map(company => (
+                                        <tr key={company.id}>
+                                            <td>{company.name}</td>
+                                            {/* Manejo seguro si rifType o rifNumber vienen nulos */}
+                                            <td>
+                                                {company.rifType && company.rifNumber 
+                                                    ? `${company.rifType}-${company.rifNumber}` 
+                                                    : 'N/A'}
+                                            </td>
+                                            <td className="actions-cell">
+                                                <button 
+                                                    className="view-button" 
+                                                    onClick={() => handleEditCompany(company.id)}
+                                                    title="Editar Empresa"
+                                                >
+                                                    <img src={editIcon} alt="Editar" />
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    ))}
                                 </tbody>
                             </table>
                         ) : (
@@ -144,8 +179,8 @@ const Companies = () => {
                     </div>
                 </div>
 
-                {/* Paginación */}
-                {filteredCompanies.length > ITEMS_PER_PAGE && (
+                {/* Controles de Paginación (Solo si hay más de 1 página) */}
+                {totalPages > 1 && (
                     <div className="pagination-controls">
                         <button 
                             onClick={() => goToPage(currentPage - 1)} 
@@ -154,17 +189,7 @@ const Companies = () => {
                         >
                             Anterior
                         </button>
-                        <div className="page-numbers">
-                            {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                                <button
-                                    key={page}
-                                    onClick={() => goToPage(page)}
-                                    className={`page-number-button ${currentPage === page ? 'active' : ''}`}
-                                >
-                                    {page}
-                                </button>
-                            ))}
-                        </div>
+                        <span style={{margin: '0 10px'}}>Página {currentPage} de {totalPages}</span>
                         <button 
                             onClick={() => goToPage(currentPage + 1)} 
                             disabled={currentPage === totalPages}
@@ -175,6 +200,8 @@ const Companies = () => {
                     </div>
                 )}
             </div>
+
+            {/* MODAL */}
             <CompaniesModal
                 isOpen={isModalOpen}
                 onClose={() => setIsModalOpen(false)}

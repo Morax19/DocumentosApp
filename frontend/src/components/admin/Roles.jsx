@@ -2,22 +2,46 @@ import React, { useState, useMemo, useEffect } from 'react';
 import LayoutBase from '../base/LayoutBase';
 import '../../styles/general/sendDocuments.css'; 
 import editIcon from '../../assets/img/edit.png';
+import RolesModal from './RolesModal';
 
-// Datos simulados de roles
-const mockRoles = [
-    { id: 1, name: 'Administrador', rif: 'J-12345678-9' },
-    { id: 2, name: 'Editor', rif: 'J-98765432-1' },
-    { id: 3, name: 'Visualizador', rif: 'J-11223344-5' },
-    { id: 4, name: 'Invitado', rif: 'J-55667788-0' },
-];
+const isDevelopment = import.meta.env.MODE === 'development';
+const apiUrl = isDevelopment ? import.meta.env.VITE_API_BASE_URL_LOCAL : import.meta.env.VITE_API_BASE_URL_PROD;
 
 const ITEMS_PER_PAGE = 100;
 
 const Roles = () => {
-    const [allRoles] = useState(mockRoles);
+    const [allRoles, setAllRoles] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
     const [filteredRoles, setFilteredRoles] = useState(allRoles);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isLoading, setIsLoading] = useState(false);
+    const [modalMode, setModalMode] = useState('add'); // 'add' | 'edit'
+    const [roleToEdit, setRoleToEdit] = useState(null);
+
+    useEffect(() => {
+        const fetchAllRoles = async () => {
+            setIsLoading(true);
+
+            try {
+                const response = await fetch(`${apiUrl}/documents/getRoles`);
+
+                if (!response.ok) {
+                    throw new Error(`Error HTTP: ${response.status}`);
+                }
+
+                const data = await response.json();
+                console.log(data)
+                setAllRoles(data);
+            } catch (err) {
+                console.error('Error al obtener los roles:', err);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        fetchAllRoles();
+    }, []);
 
     useEffect(() => {
         let results = [...allRoles];
@@ -46,11 +70,31 @@ const Roles = () => {
     };
 
     const handleAddRole = () => {
-        alert('Abrir modal para crear un rol.');
+        setModalMode('add');
+        setRoleToEdit(null);
+        setIsModalOpen(true);
     };
 
-    const handleEditRole = () => {
-        alert('Abrir modal para editar un rol.');
+    const handleEditRole = (roleId) => {
+        const role = allRoles.find(r => r.id === roleId);
+        if (!role) return;
+        setModalMode('edit');
+        setRoleToEdit(role);
+        setIsModalOpen(true);
+    };
+
+    const handleSaveRole = (roleObj, mode) => {
+        if (mode === 'add') {
+            setAllRoles(prev => [roleObj, ...prev]);
+        } else if (mode === 'edit') {
+            setAllRoles(prev => prev.map(c => c.id === roleObj.id ? roleObj : c));
+        }
+        // actualizar también filteredRoles inmediatamente
+        setFilteredRoles(prev => {
+            const exists = prev.some(c => c.id === roleObj.id);
+            if (mode === 'add') return [roleObj, ...prev];
+            return prev.map(c => c.id === roleObj.id ? roleObj : c);
+        });
     };
 
     return (
@@ -86,19 +130,22 @@ const Roles = () => {
                                     <tr>
                                         <th>ROL</th>
                                         <th>PERMISOS</th>
+                                        <th>USUARIOS</th>
                                         <th>ACCIONES</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {paginated.map(company => (
-                                        <tr key={company.id}>
-                                            <td>{company.name}</td>
-                                            <td>{company.rif}</td>
+                                    {paginated.map(role => (
+                                        <tr key={role.id}>
+                                            <td>{role.name}</td>
+                                            <td>{role.permisos && role.permisos.length > 0 ? role.permisos.map(p => p.name).join(', ') : 'Ninguno'}</td>
+                                            {<td>{role.usuarios ? role.usuarios.length : 0}</td>}
+                                            {/*<td>{role.usuarios ? role.usuarios.join(', ') : 'Ninguno'}</td>*/}
                                             <td className="actions-cell">
                                                 <button 
                                                     className="view-button" 
-                                                    onClick={() => handleEditRole(company.id)}
-                                                    title="Editar Empresa"
+                                                    onClick={() => handleEditRole(role.id)}
+                                                    title="Editar Rol"
                                                 >
                                                     <img src={editIcon} alt="Editar" />
                                                 </button>
@@ -144,6 +191,13 @@ const Roles = () => {
                     </div>
                 )}
             </div>
+            <RolesModal
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                mode={modalMode}
+                role={roleToEdit}
+                onSave={handleSaveRole}
+            />
         </LayoutBase>
     );
 };

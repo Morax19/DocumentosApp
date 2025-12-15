@@ -18,37 +18,74 @@ import SearchIcon from '@mui/icons-material/Search';
 import FolderOpenOutlined from '@mui/icons-material/FolderOpenOutlined';
 import EditOutlined from '@mui/icons-material/EditOutlined';
 
-// Datos simulados para las carpetas
-const mockFolders = [
-    { id: 1, name: 'Contrato de Arrendamiento' },
-    { id: 2, name: 'RIF' },
-    { id: 3, name: 'Vehículos' },
-    { id: 4, name: 'Poderes' },
-    { id: 5, name: 'Permiso Sanitario Locales' },
-    { id: 6, name: 'Registros Mercantiles' },
-    { id: 7, name: 'Patente' },
-    { id: 8, name: 'Corpoelec' },
-    { id: 9, name: 'Registro Sanitario' },
-    { id: 10, name: 'Pólizas Seguro' },
-    { id: 11, name: 'Dominios' },
-];
+const isDevelopment = import.meta.env.MODE === 'development';
+const apiUrl = isDevelopment ? import.meta.env.VITE_API_BASE_URL_LOCAL : import.meta.env.VITE_API_BASE_URL_PROD;
 
 const HomeAdmin = () => {
+    const { user } = useAuth();
+    const hasRole = (roleId) => {
+        if (!user) return false;
+        return Array.isArray(user.roles) && user.roles.some(r => (typeof r === 'number' ? r === roleId : (r.id === roleId || r.roleId === roleId)));
+    };
+    const isEditor = hasRole(11);
+    const isLector = hasRole(12);
+    const isOnlyLector = isLector && !isEditor;
+    const [mockFolders, setMockFolders] = useState([])
     const [searchTerm, setSearchTerm] = useState('');
-    const [filteredFolders, setFilteredFolders] = useState(mockFolders);
+    const [message, setMessage] = useState('');
+    const [isLoading, setIsLoading] = useState(false);
+    const [error, setError] = useState(null);
+    const [filteredFolders, setFilteredFolders] = useState([]);
     const navigate = useNavigate();
 
     useEffect(() => {
+        const fetchFolders = async () => {
+            setIsLoading(true);
+
+            try {
+                const response = await fetch(`${apiUrl}/documents/getDocType`);
+                
+                if (!response.ok) {
+                    throw new Error(`Error HTTP: ${response.status}`);
+                }
+
+                const data = await response.json();
+                setMockFolders(data);
+            } catch (err) {
+                setError(err.message);
+                setMessage('Error al cargar las carpetas.');
+                console.error('Error al obtener las carpetas:', err);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        fetchFolders();
+    }, []);
+    
+    useEffect(() => {
+        if(!searchTerm) {
+            setFilteredFolders(mockFolders);
+            return;
+        }
+
         const results = mockFolders.filter(folder =>
             folder.name.toLowerCase().includes(searchTerm.toLowerCase())
         );
-        setFilteredFolders(results);
-    }, [searchTerm]);
 
     const handleFolderClick = (folderName) => {
         const encodedFolderName = encodeURIComponent(folderName);
-        navigate(`/${encodedFolderName}`);
+        navigate(`/${encodedFolderName}`, { state: { folderId: folderId, folderName: folderName } });
     };
+
+    // Función para manejar el clic en el ícono de edición
+    const handleEditClick = (e, folderId, folderName) => {
+        e.stopPropagation(); 
+        
+        navigate('/document-type', {
+            state: { folderId: folderId, folderName: folderName, isEditing: true }
+        });
+    };   
 
     return (
         <LayoutBaseAdmin activePage="home">
